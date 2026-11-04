@@ -6,6 +6,8 @@ A browser-based simulator for the ATmega328P (the chip on the Arduino Uno). Writ
 assemble it, then step through it one instruction at a time or run it at any clock speed while
 watching every register, I/O port, timer and the serial port.
 
+**Live at <https://brunov.tech/tools/atmsim/>**
+
 Inspired by [ice458's PIO simulator](https://ice458.github.io/tools/pio_sim).
 
 ## Features
@@ -65,10 +67,16 @@ Everything runs client-side in TypeScript; there is no backend.
 `src/core/m328pdef.ts` is generated from AVRA's `m328Pdef.inc` with
 `node scripts/gen-defs.mjs path/to/m328Pdef.inc`.
 
-## Deploying to GitHub Pages
+## Deployment
 
-The workflow in `.github/workflows/deploy.yml` tests, builds and publishes the site on every push
-to `main`. In the repository settings, set **Pages → Source** to **GitHub Actions**.
+The site is served from [brunov.tech/tools/atmsim](https://brunov.tech/tools/atmsim/).
+`.github/workflows/deploy.yml` tests and builds on every push to `main`, then copies `dist/` into the
+`portfolio` repo at `static/tools/atmsim/`; Cloudflare Pages rebuilds the site from there.
+
+Publishing needs a repository secret `PORTFOLIO_TOKEN` (fine-grained token, Contents read/write on
+`Brun0-V/portfolio`). Without it the workflow still tests and builds.
+
+The build uses relative asset paths (`base: './'` in `vite.config.ts`), so it works under any path.
 
 ## Project layout
 
