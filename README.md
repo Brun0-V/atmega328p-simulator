@@ -69,12 +69,13 @@ Everything runs client-side in TypeScript; there is no backend.
 
 ## Deployment
 
-The site is served from [brunov.tech/tools/atmsim](https://brunov.tech/tools/atmsim/).
-`.github/workflows/deploy.yml` tests and builds on every push to `main`, then copies `dist/` into the
-`portfolio` repo at `static/tools/atmsim/`; Cloudflare Pages rebuilds the site from there.
-
-Publishing needs a repository secret `PORTFOLIO_TOKEN` (fine-grained token, Contents read/write on
-`Brun0-V/portfolio`). Without it the workflow still tests and builds.
+- `.github/workflows/deploy.yml` tests, builds and publishes to GitHub Pages on every push to `main`
+  (`https://brun0-v.github.io/atmega328p-simulator/`). In the repo settings, **Pages → Source** must be
+  **GitHub Actions**.
+- `cloudflare/worker.js` is a Cloudflare Worker on the route `brunov.tech/tools/atmsim*` that forwards
+  those requests to the GitHub Pages deployment, so the simulator is served at
+  <https://brunov.tech/tools/atmsim/> while the rest of brunov.tech is untouched.
+  Deploy it with `npx wrangler deploy --config cloudflare/wrangler.toml`.
 
 The build uses relative asset paths (`base: './'` in `vite.config.ts`), so it works under any path.
 

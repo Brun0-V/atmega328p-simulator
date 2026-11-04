@@ -1,11 +1,4 @@
-name: Test and publish to brunov.tech
-
-# Builds the simulator and copies it into the portfolio repo at static/tools/atmsim/.
-# Cloudflare Pages then rebuilds brunov.tech, so the simulator is served at
-# https://brunov.tech/tools/atmsim/
-#
-# Publishing needs a repository secret PORTFOLIO_TOKEN: a fine-grained token with
-# Contents read/write on Brun0-V/portfolio. Without it, the workflow only tests and builds.
+name: Deploy to GitHub Pages
 
 on:
   push:
@@ -14,6 +7,12 @@ on:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -27,35 +26,16 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-
-      - name: Check for publish token
-        id: token
-        env:
-          PORTFOLIO_TOKEN: ${{ secrets.PORTFOLIO_TOKEN }}
-        run: echo "present=$([ -n "$PORTFOLIO_TOKEN" ] && echo yes || echo no)" >> "$GITHUB_OUTPUT"
-
-      - name: Check out portfolio
-        if: steps.token.outputs.present == 'yes'
-        uses: actions/checkout@v4
+      - uses: actions/upload-pages-artifact@v3
         with:
-          repository: Brun0-V/portfolio
-          ref: master
-          token: ${{ secrets.PORTFOLIO_TOKEN }}
-          path: portfolio
+          path: dist
 
-      - name: Copy build into portfolio and push
-        if: steps.token.outputs.present == 'yes'
-        run: |
-          rm -rf portfolio/static/tools/atmsim
-          mkdir -p portfolio/static/tools/atmsim
-          cp -r dist/. portfolio/static/tools/atmsim/
-          cd portfolio
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add static/tools/atmsim
-          if git diff --staged --quiet; then
-            echo "Simulator is already up to date."
-          else
-            git commit -m "Update ATmega328P simulator (${GITHUB_SHA::7}) [skip ci]"
-            git push
-          fi
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

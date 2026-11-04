@@ -1,0 +1,5 @@
+# Deploy with: npx wrangler deploy --config cloudflare/wrangler.toml
+name = "atmsim-proxy"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+routes = [{ pattern = "brunov.tech/tools/atmsim*", zone_name = "brunov.tech" }]
