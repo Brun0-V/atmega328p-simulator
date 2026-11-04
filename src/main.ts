@@ -3,6 +3,8 @@ import iconUrl from '../assets/icon.svg';
 import { assemble, type AsmResult } from './core/assembler';
 import { ATmega328P, type StopReason } from './core/mcu';
 import { EXAMPLES } from './examples';
+import { wordsToBytes } from './upload/stk500';
+import { ArduinoWindow } from './ui/arduino';
 import { TimingChart } from './ui/chart';
 import { formatHz, h, setClass, setText } from './ui/dom';
 import { AsmEditor } from './ui/editor';
@@ -74,7 +76,7 @@ let speedSample = { t: performance.now(), cycles: 0, hz: 0 };
 const SPEEDS: [string, string][] = [
   ['1', '1 Hz'], ['2', '2 Hz'], ['5', '5 Hz'], ['10', '10 Hz'], ['50', '50 Hz'], ['100', '100 Hz'],
   ['1000', '1 kHz'], ['10000', '10 kHz'], ['100000', '100 kHz'], ['1000000', '1 MHz'],
-  ['realtime', 'Real time (F_CPU)'], ['max', 'Max'],
+  ['realtime', 'Real time'], ['max', 'Max'],
 ];
 
 // ---------------------------------------------------------------------------
@@ -100,11 +102,17 @@ const btnReset = h('button', { class: 'btn', title: 'Reset the MCU (keeps the pr
 const statusPill = h('span', { class: 'pill' }, 'READY');
 const speedText = h('span', { class: 'muted small speed-text' });
 const helpBtn = h('button', { class: 'btn ghost', title: 'Help', onclick: () => helpDialog.showModal() }, '?');
+const btnArduino = h('button', {
+  class: 'btn arduino',
+  title: 'Upload the program to a real Arduino Uno over USB (Web Serial)',
+  onclick: () => arduino.show(),
+}, 'Upload to Arduino');
+exampleSel.classList.add('example-sel');
 
 const toolbar = h('header', { class: 'toolbar' },
   h('div', { class: 'brand' }, h('img', { src: iconUrl, alt: '' }), h('div', {}, h('b', {}, 'ATmega328P'), h('span', {}, ' Simulator'))),
   exampleSel,
-  h('div', { class: 'btn-group' }, btnAssemble),
+  h('div', { class: 'btn-group' }, btnAssemble, btnArduino),
   h('div', { class: 'btn-group' }, btnStep, btnOver, btnOut, btnRun, btnReset),
   h('label', { class: 'field' }, 'Clock', speedSel),
   h('label', { class: 'field' }, 'F_CPU', fcpuInput, h('span', { class: 'muted' }, 'MHz')),
@@ -164,21 +172,35 @@ const helpDialog = h('dialog', { class: 'help' },
   h('h3', {}, 'Clock'),
   h('p', {}, '"Clock" sets how many CPU cycles are simulated per second while running. "Real time" runs at F_CPU; ',
     '"Max" runs as fast as your browser allows. F_CPU only changes how cycles convert to time and baud rate.'),
+  h('h3', {}, 'Upload to a real Arduino Uno'),
+  h('p', {}, '"Upload to Arduino" sends the code in the editor to an Uno over USB using Web Serial (Chrome, Edge or Opera on desktop). ',
+    'It goes through the Uno’s bootloader like the Arduino IDE does: the bootloader itself is never written, fuses are never changed, ',
+    'and every page is read back and verified. Programs that would reach the bootloader area (byte 0x7E00) are refused.'),
   h('h3', {}, 'What is simulated'),
   h('p', {}, 'The full AVR instruction set of the ATmega328P with cycle counts, SRAM and stack, GPIO ports B/C/D with pull-ups, ',
     'Timer0/1/2 (all waveform modes, compare outputs, input capture, external clock), USART0, INT0/INT1, pin-change interrupts and SLEEP (idle). ',
     'Not simulated: ADC, SPI, TWI, EEPROM, watchdog and self-programming (SPM).'),
   h('form', { method: 'dialog' }, h('button', { class: 'btn primary' }, 'Close')));
 
+// Uploads always use the code currently in the editor.
+const arduino = new ArduinoWindow(() => {
+  const res = assemble(editor.text);
+  if (!res.ok) throw new Error('Fix the assembly errors before uploading.');
+  return wordsToBytes(res.flash, res.size);
+});
+
 const app = document.getElementById('app')!;
 app.append(
   toolbar,
   h('main', { class: 'layout' },
-    h('div', { class: 'col col-editor' }, editorPanel, memPanel.el),
-    h('div', { class: 'col' }, cpuPanel.el, regPanel.el, portsPanel.el),
-    h('div', { class: 'col' }, timersPanel.el, intPanel.el, usartPanel.el),
-    h('div', { class: 'col col-wide' }, chart.el)),
+    h('div', { class: 'area-editor' }, editorPanel),
+    h('div', { class: 'col area-cpu' }, cpuPanel.el, regPanel.el),
+    h('div', { class: 'col area-io' }, portsPanel.el, usartPanel.el),
+    h('div', { class: 'area-chart' }, chart.el),
+    h('div', { class: 'area-mem' }, memPanel.el),
+    h('div', { class: 'col area-periph' }, timersPanel.el, intPanel.el)),
   helpDialog,
+  arduino.el,
 );
 
 // ---------------------------------------------------------------------------

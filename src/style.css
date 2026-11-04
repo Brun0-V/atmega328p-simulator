@@ -36,7 +36,7 @@ button, select, input { font: inherit; color: inherit; }
 /* ---------- Toolbar ---------- */
 .toolbar {
   position: sticky; top: 0; z-index: 10;
-  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
   padding: 10px 16px;
   background: rgba(11, 15, 23, 0.92);
   backdrop-filter: blur(8px);
@@ -62,10 +62,12 @@ button, select, input { font: inherit; color: inherit; }
 select, input.fcpu {
   background: #141b2a; border: 1px solid var(--border-2); border-radius: 7px; padding: 5px 8px;
 }
-input.fcpu { width: 72px; }
+input.fcpu { width: 58px; }
 .field { display: flex; align-items: center; gap: 6px; color: var(--muted); }
-.status { display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: 0; }
-.speed-text { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; min-width: 110px; flex: 1 1 110px; }
+.example-sel { max-width: 190px; }
+.toolbar .btn { padding: 5px 9px; }
+.speed-text { min-width: 0; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill {
   font: 600 11px/1 var(--mono); letter-spacing: 0.06em;
   padding: 5px 9px; border-radius: 999px; background: #1f2937; color: #cbd5e1; border: 1px solid #334155;
@@ -77,19 +79,29 @@ input.fcpu { width: 72px; }
 /* ---------- Layout ---------- */
 .layout {
   display: grid;
-  grid-template-columns: minmax(440px, 1.25fr) minmax(360px, 1fr) minmax(360px, 1fr);
+  grid-template-columns: minmax(420px, 1.3fr) minmax(340px, 1fr) minmax(340px, 1fr);
+  grid-template-areas:
+    'editor cpu io'
+    'chart chart chart'
+    'mem periph periph';
   gap: 12px; padding: 12px 16px 24px;
   align-items: start;
 }
+.area-editor { grid-area: editor; min-width: 0; }
+.area-cpu { grid-area: cpu; }
+.area-io { grid-area: io; }
+.area-chart { grid-area: chart; min-width: 0; }
+.area-mem { grid-area: mem; min-width: 0; }
+.area-periph { grid-area: periph; }
 .col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.col-wide { grid-column: 1 / -1; }
 @media (max-width: 1350px) {
-  .layout { grid-template-columns: minmax(420px, 1.2fr) minmax(360px, 1fr); }
-  .col-editor { grid-row: span 2; }
+  .layout {
+    grid-template-columns: minmax(400px, 1.2fr) minmax(340px, 1fr);
+    grid-template-areas: 'editor cpu' 'chart chart' 'io periph' 'mem mem';
+  }
 }
 @media (max-width: 860px) {
-  .layout { grid-template-columns: 1fr; padding: 10px; }
-  .col-editor { grid-row: auto; }
+  .layout { grid-template-columns: 1fr; grid-template-areas: 'editor' 'cpu' 'chart' 'io' 'periph' 'mem'; padding: 10px; }
   .status { margin-left: 0; }
   .toolbar { position: static; }
 }
@@ -199,19 +211,19 @@ input.fcpu { width: 72px; }
 .lg.in-z { background: repeating-linear-gradient(45deg, #151c2a, #151c2a 4px, #1b2333 4px, #1b2333 8px); }
 
 /* ---------- Timers ---------- */
-.timers { display: flex; flex-direction: column; gap: 10px; }
-.timer { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--panel-2); }
-.timer.stopped { opacity: 0.6; }
-.timer-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
-.timer-head :last-child { margin-left: auto; }
-.timer-count { display: flex; gap: 10px; align-items: baseline; }
-.timer-count label { color: var(--muted); }
-.bar { height: 4px; background: #1f2937; border-radius: 2px; margin: 5px 0 7px; overflow: hidden; }
+.timers-tbl td { padding: 4px 6px; }
+.timers-tbl tr.stopped td { color: #6b7280; }
+.timers-tbl td.oc-on { color: #fca5a5; }
+.count-cell { min-width: 70px; }
+.bar { height: 3px; background: #1f2937; border-radius: 2px; margin-top: 3px; overflow: hidden; }
 .bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #22d3ee); width: 0; }
-.tflags { display: flex; gap: 5px; margin-top: 6px; }
-.tflag { font: 600 10px var(--mono); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-2); color: #6b7280; }
+.tflags { display: flex; gap: 3px; }
+.tflag { font: 600 10px var(--mono); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border-2); color: #6b7280; }
 .tflag.en { border-color: var(--accent-2); color: #c7d2fe; }
 .tflag.set { background: #78350f; color: #fde68a; }
+.ints-tbl td { padding: 2px 6px; }
+.empty { padding: 6px 2px 0; }
+.ghost-link { margin-left: auto; background: transparent; border-color: transparent; color: var(--accent-2); }
 
 /* ---------- Tables ---------- */
 .tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -273,7 +285,7 @@ input.fcpu { width: 72px; }
 }
 .chip.on { background: #1e2a5a; border-color: var(--accent-2); color: #e0e7ff; }
 .chart-wrap { border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); padding: 4px 0; }
-.chart-canvas { display: block; width: 100%; height: 60px; cursor: crosshair; }
+.chart-canvas { display: block; width: 100%; height: 80px; cursor: crosshair; }
 
 /* ---------- Help dialog ---------- */
 dialog.help {
@@ -285,3 +297,20 @@ dialog.help h3 { font-size: 13px; color: #a5b4fc; margin: 14px 0 6px; }
 dialog.help p { color: #cbd5e1; }
 dialog.help form { margin-top: 14px; text-align: right; }
 kbd { font: 11px var(--mono); padding: 1px 6px; border: 1px solid var(--border-2); border-bottom-width: 2px; border-radius: 4px; background: #0b1220; }
+
+/* ---------- Arduino upload window ---------- */
+.btn.arduino { border-color: #0e7490; background: #083344; color: #a5f3fc; }
+.btn.arduino:hover { background: #0c4a5e; }
+dialog.arduino-window {
+  position: fixed; inset: auto 16px 16px auto; margin: 0; z-index: 20;
+  width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 90px); overflow: auto;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border-2); border-radius: 12px;
+  padding: 12px 14px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+.arduino-window .close { margin-left: auto; font-size: 18px; line-height: 1; padding: 2px 8px; }
+.arduino-window h3 { font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: #a5b4fc; margin: 14px 0 6px; }
+.arduino-window .row { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+.arduino-window .bar { height: 5px; margin: 8px 0 6px; }
+.upload-log { margin: 6px 0 0; max-height: 110px; overflow: auto; font: 11.5px/1.4 var(--mono); color: var(--muted); white-space: pre-wrap; }
+.board-console { height: 120px; }
+.arduino-window .console-input { width: 100%; margin-top: 6px; }

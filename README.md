@@ -29,6 +29,10 @@ Inspired by [ice458's PIO simulator](https://ice458.github.io/tools/pio_sim).
   - USART0 with baud-rate timing and a serial console; the TXD waveform is visible on PD1.
   - INT0/INT1, pin-change interrupts, SLEEP (idle mode).
 - **Timing chart** of any pins over the last 100 cycles to 100M cycles.
+- **Upload to a real Arduino Uno** over USB with Web Serial (Chrome, Edge, Opera on desktop), plus a
+  serial monitor for the board. Uploads go through the Uno's bootloader (STK500v1, like avrdude
+  `-c arduino`): the bootloader in the last 512 bytes is never written, fuses are never touched,
+  every page is verified, and programs that would reach byte `0x7E00` are refused before anything is sent.
 - Example programs: arithmetic & flags, blink, timer interrupts, CTC, PWM fade, USART echo, button on INT0.
 
 Not simulated: ADC, SPI, TWI, EEPROM access, watchdog, and self-programming (`spm`).
@@ -61,6 +65,7 @@ Everything runs client-side in TypeScript; there is no backend.
   [avr8js](https://github.com/wokwi/avr8js) and compares all state after every instruction.
   Three avr8js bugs are excluded from the comparison: its H flag (computed from bit 0 instead of bit 3),
   CBI cycle count (1 instead of 2), and FMULSU's Z flag (inverted).
+- `tests/upload.test.ts` runs the uploader against a simulated Optiboot bootloader.
 - `tests/assembler.test.ts` and `tests/mcu.test.ts` compare the assembler's output byte for byte
   with AVRA 1.4.2 (`tests/fixtures/`) and check the example programs' timing and behavior.
 
@@ -83,7 +88,8 @@ The build uses relative asset paths (`base: './'` in `vite.config.ts`), so it wo
 
 ```
 src/core/     simulator: cpu.ts, assembler.ts, expr.ts, disasm.ts, gpio.ts, timers.ts, usart.ts, mcu.ts
-src/ui/       editor (CodeMirror), panels, memory views, timing chart
+src/ui/       editor (CodeMirror), panels, memory views, timing chart, Arduino upload window
+src/upload/   STK500v1 uploader and Web Serial transport
 src/examples/ example programs (.asm)
 tests/        test suite and AVRA reference output
 ```

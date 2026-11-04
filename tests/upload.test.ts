@@ -1,0 +1,139 @@
+import { describe, expect, it } from 'vitest';
+import { assemble } from '../src/core/assembler';
+import { EXAMPLES } from '../src/examples';
+import { BOOTLOADER_START, Stk500, UploadError, checkImage, wordsToBytes, type Transport } from '../src/upload/stk500';
+
+/** Simulated Optiboot on an ATmega328P, speaking STK500v1. */
+class FakeOptiboot implements Transport {
+  flash = new Uint8Array(0x8000).fill(0xff);
+  inBootloader = false;
+  started = false;
+  bootWriteAttempts = 0;
+  signature = [0x1e, 0x95, 0x0f];
+  private rx: number[] = [];
+  private tx: number[] = [];
+  private addr = 0; // byte address
+  private dtr = false;
+  /** Bytes of noise the running sketch prints before reset. */
+  noise = [0x48, 0x69, 0x0a];
+
+  constructor() {
+    for (let i = BOOTLOADER_START; i < 0x8000; i++) this.flash[i] = 0xb0; // recognizable bootloader bytes
+    this.tx.push(...this.noise);
+  }
+
+  async setSignals(dtr: boolean): Promise<void> {
+    if (dtr && !this.dtr) {
+      // DTR asserted: the board resets into the bootloader.
+      this.inBootloader = true;
+      this.started = false;
+      this.rx = [];
+    }
+    this.dtr = dtr;
+  }
+  async sleep(): Promise<void> {}
+  async drain(): Promise<void> {
+    this.tx = [];
+  }
+  async read(n: number): Promise<Uint8Array> {
+    if (this.tx.length < n) throw new UploadError('Timed out waiting for the board.');
+    return new Uint8Array(this.tx.splice(0, n));
+  }
+  async write(data: Uint8Array): Promise<void> {
+    if (!this.inBootloader) return; // the sketch ignores us
+    this.rx.push(...data);
+    this.process();
+  }
+
+  private process(): void {
+    for (;;) {
+      const r = this.rx;
+      if (!r.length) return;
+      const need = this.commandLength(r);
+      if (need === null || r.length < need) return;
+      const cmd = r.splice(0, need);
+      if (cmd[cmd.length - 1] !== 0x20) {
+        this.tx.push(0x15); // STK_NOSYNC
+        continue;
+      }
+      this.tx.push(0x14);
+      switch (cmd[0]) {
+        case 0x30: case 0x50: break;
+        case 0x51: this.inBootloader = false; this.started = true; break;
+        case 0x75: this.tx.push(...this.signature); break;
+        case 0x55: this.addr = (cmd[1] | (cmd[2] << 8)) * 2; break;
+        case 0x64: {
+          const len = (cmd[1] << 8) | cmd[2];
+          for (let i = 0; i < len; i++) {
+            const a = this.addr + i;
+            // Optiboot can't write its own section (lock bits); count any attempt.
+            if (a >= BOOTLOADER_START) this.bootWriteAttempts++;
+            else this.flash[a] = cmd[4 + i];
+          }
+          break;
+        }
+        case 0x74: {
+          const len = (cmd[1] << 8) | cmd[2];
+          this.tx.push(...this.flash.subarray(this.addr, this.addr + len));
+          break;
+        }
+      }
+      this.tx.push(0x10);
+    }
+  }
+
+  private commandLength(r: number[]): number | null {
+    switch (r[0]) {
+      case 0x30: case 0x50: case 0x51: case 0x75: return 2;
+      case 0x55: return 4;
+      case 0x74: return 5;
+      case 0x64: return r.length < 3 ? null : 5 + ((r[1] << 8) | r[2]);
+      default: return 2;
+    }
+  }
+}
+
+function build(id: string): Uint8Array {
+  const res = assemble(EXAMPLES.find((e) => e.id === id)!.source);
+  expect(res.ok).toBe(true);
+  return wordsToBytes(res.flash, res.size);
+}
+
+describe('STK500 upload to Optiboot', () => {
+  it('uploads, verifies and starts an example without touching the bootloader', async () => {
+    const board = new FakeOptiboot();
+    const image = build('usart');
+    const phases: string[] = [];
+    await new Stk500(board).upload(image, (p) => phases.push(p.phase));
+    expect([...board.flash.subarray(0, image.length)]).toEqual([...image]);
+    expect(board.flash.subarray(BOOTLOADER_START).every((b) => b === 0xb0)).toBe(true);
+    expect(board.bootWriteAttempts).toBe(0);
+    expect(board.started).toBe(true);
+    expect(phases[0]).toBe('reset');
+    expect(phases.at(-1)).toBe('done');
+  });
+
+  it('refuses a program that would reach the bootloader, before sending anything', async () => {
+    const board = new FakeOptiboot();
+    const res = assemble(`.org 0x3F00\n  nop\n`); // word 0x3F00 = byte 0x7E00
+    expect(res.ok).toBe(true);
+    const image = wordsToBytes(res.flash, res.size);
+    await expect(new Stk500(board).upload(image)).rejects.toThrow(/bootloader/);
+    expect(board.inBootloader).toBe(false); // never even reset
+    expect(() => checkImage(new Uint8Array(BOOTLOADER_START))).not.toThrow();
+    expect(() => checkImage(new Uint8Array(BOOTLOADER_START + 1))).toThrow(UploadError);
+  });
+
+  it('rejects a chip that is not an ATmega328', async () => {
+    const board = new FakeOptiboot();
+    board.signature = [0x1e, 0x98, 0x01]; // ATmega2560
+    await expect(new Stk500(board).upload(build('blink'))).rejects.toThrow(/Unexpected chip signature/);
+    expect(board.flash.subarray(0, 16).every((b) => b === 0xff)).toBe(true);
+  });
+
+  it('reports a clear error when the board never answers', async () => {
+    const board = new FakeOptiboot();
+    board.setSignals = async () => {}; // reset line not connected
+    await expect(new Stk500(board).upload(build('blink'))).rejects.toThrow(/No answer from the bootloader/);
+  });
+});

@@ -317,105 +317,105 @@ export class PortsPanel implements Panel {
 // ---------------------------------------------------------------------------
 
 const CS_LABELS: Record<string, string[]> = {
-  Timer0: ['stopped', 'clk/1', 'clk/8', 'clk/64', 'clk/256', 'clk/1024', 'T0 pin falling', 'T0 pin rising'],
-  Timer1: ['stopped', 'clk/1', 'clk/8', 'clk/64', 'clk/256', 'clk/1024', 'T1 pin falling', 'T1 pin rising'],
+  Timer0: ['stopped', 'clk/1', 'clk/8', 'clk/64', 'clk/256', 'clk/1024', 'T0 ↓', 'T0 ↑'],
+  Timer1: ['stopped', 'clk/1', 'clk/8', 'clk/64', 'clk/256', 'clk/1024', 'T1 ↓', 'T1 ↑'],
   Timer2: ['stopped', 'clk/1', 'clk/8', 'clk/32', 'clk/64', 'clk/128', 'clk/256', 'clk/1024'],
 };
-const COM_LABEL = ['disconnected', 'toggle/…', 'clear (non-inv.)', 'set (inverting)'];
+const COM_LABEL = ['disconnected', 'toggle on match', 'clear on match (non-inverting)', 'set on match (inverting)'];
+const MODE_SHORT: Record<string, string> = { normal: 'Normal', ctc: 'CTC', fast: 'Fast PWM', pc: 'Phase PWM', pfc: 'P&F PWM' };
 
+/** Compact table: one row per timer. Details are in tooltips. */
 export class TimersPanel implements Panel {
   el: HTMLElement;
-  private cards: {
+  private rows: {
     t: Timer;
-    root: HTMLElement;
-    mode: HTMLElement;
-    clock: HTMLElement;
+    tr: HTMLElement;
     count: HTMLElement;
     bar: HTMLElement;
     top: HTMLElement;
     ocrA: HTMLElement;
     ocrB: HTMLElement;
-    icr?: HTMLElement;
+    mode: HTMLElement;
+    clock: HTMLElement;
     flags: HTMLElement;
-    freq: HTMLElement;
   }[] = [];
 
   constructor(private mcu: ATmega328P) {
-    const body = h('div', { class: 'timers' });
+    const tbody = h('tbody');
     for (const t of [mcu.timer0, mcu.timer1, mcu.timer2]) {
-      const mk = () => h('span', { class: 'mono' });
-      const card = {
-        t, root: h('div', { class: 'timer' }), mode: mk(), clock: mk(), count: h('span', { class: 'mono big' }),
-        bar: h('div', { class: 'bar-fill' }), top: mk(), ocrA: mk(), ocrB: mk(),
-        icr: t.cfg.bits === 16 ? mk() : undefined, flags: h('div', { class: 'tflags' }), freq: h('span', { class: 'muted small' }),
+      const td = (cls = 'mono') => h('td', { class: cls });
+      const r = {
+        t, tr: h('tr'), count: h('span', { class: 'mono' }), bar: h('div', { class: 'bar-fill' }),
+        top: td(), ocrA: td(), ocrB: td(), mode: td(''), clock: td(''), flags: td('tflags'),
       };
-      const n = t.cfg.name.slice(-1);
-      card.root.append(
-        h('div', { class: 'timer-head' }, h('b', {}, `${t.cfg.name}`), h('span', { class: 'muted small' }, `${t.cfg.bits}-bit`), card.freq),
-        h('div', { class: 'timer-count' }, h('label', {}, `TCNT${n}`), card.count),
-        h('div', { class: 'bar' }, card.bar),
-        h(
-          'div',
-          { class: 'kv-grid small' },
-          h('label', {}, 'Mode'), card.mode,
-          h('label', {}, 'Clock'), card.clock,
-          h('label', {}, 'TOP'), card.top,
-          h('label', {}, `OCR${n}A`), card.ocrA,
-          h('label', {}, `OCR${n}B`), card.ocrB,
-          ...(card.icr ? [h('label', {}, 'ICR1'), card.icr] : []),
-        ),
-        card.flags,
+      r.tr.append(
+        h('td', {}, h('b', {}, `T${t.cfg.name.slice(-1)}`), h('span', { class: 'muted small' }, ` ${t.cfg.bits}b`)),
+        h('td', { class: 'count-cell' }, r.count, h('div', { class: 'bar' }, r.bar)),
+        r.top, r.ocrA, r.ocrB, r.mode, r.clock, r.flags,
       );
-      body.append(card.root);
-      this.cards.push(card);
+      tbody.append(r.tr);
+      this.rows.push(r);
     }
-    this.el = h('section', { class: 'panel' }, h('h2', {}, 'Timers'), body);
+    this.el = h('section', { class: 'panel' }, h('h2', {}, 'Timers'),
+      h('table', { class: 'tbl timers-tbl' },
+        h('thead', {}, h('tr', {}, ...['', 'TCNT', 'TOP', 'OCR A', 'OCR B', 'Mode', 'Clock', 'Flags'].map((x) => h('th', {}, x)))),
+        tbody));
   }
 
   render(): void {
     const d = this.mcu.cpu.data;
-    for (const c of this.cards) {
-      const t = c.t;
+    for (const r of this.rows) {
+      const t = r.t;
       const w = t.cfg.bits === 8 ? 2 : 4;
-      const fmt = (v: number) => `0x${v.toString(16).toUpperCase().padStart(w, '0')} (${v})`;
-      const running = t.cs !== 0;
-      setClass(c.root, 'stopped', !running);
-      setText(c.count, fmt(t.count));
-      const top = t.top;
-      c.bar.style.width = `${top ? Math.min(100, (t.count / top) * 100) : 0}%`;
-      setText(c.mode, `${t.wgm}: ${t.mode.label}`);
-      setText(c.clock, CS_LABELS[t.cfg.name][t.cs]);
-      setText(c.top, fmt(top));
+      const hx = (v: number) => v.toString(16).toUpperCase().padStart(w, '0');
       const n = t.cfg.name.slice(-1);
-      setText(c.ocrA, fmt(t.ocrA) + (t.comA ? ` → OC${n}A ${COM_LABEL[t.comA]}` : ''));
-      setText(c.ocrB, fmt(t.ocrB) + (t.comB ? ` → OC${n}B ${COM_LABEL[t.comB]}` : ''));
-      if (c.icr) setText(c.icr, fmt(d[t.cfg.icr!] | (d[t.cfg.icr! + 1] << 8)));
+      setClass(r.tr, 'stopped', t.cs === 0);
+      const top = t.top;
+      setText(r.count, hx(t.count));
+      setTitle(r.count, `TCNT${n} = ${t.count}`);
+      r.bar.style.width = `${top ? Math.min(100, (t.count / top) * 100) : 0}%`;
+      setText(r.top, hx(top));
+      const oc = (ch: 'A' | 'B', el: HTMLElement, v: number, com: number) => {
+        setText(el, hx(v) + (t.ocConnected(ch) ? ` → OC${n}${ch}` : ''));
+        setClass(el, 'oc-on', t.ocConnected(ch));
+        setTitle(el, `OCR${n}${ch} = ${v}\nOutput OC${n}${ch}: ${COM_LABEL[com]}`);
+      };
+      oc('A', r.ocrA, t.ocrA, t.comA);
+      oc('B', r.ocrB, t.ocrB, t.comB);
+      setText(r.mode, MODE_SHORT[t.mode.kind]);
+      let modeTip = `WGM ${t.wgm}: ${t.mode.label}`;
+      if (t.cfg.icr !== undefined) modeTip += `\nICR1 = ${d[t.cfg.icr] | (d[t.cfg.icr + 1] << 8)}`;
       const div = t.prescaler;
       if (div > 0) {
         const steps = t.mode.kind === 'pc' || t.mode.kind === 'pfc' ? 2 * top : top + 1;
-        setText(c.freq, `period ${formatHz(this.mcu.frequency / div / Math.max(1, steps))}`);
-      } else setText(c.freq, '');
-      // Flags: show enable (TIMSK) and flag (TIFR) state
+        modeTip += `\nPeriod: ${formatHz(this.mcu.frequency / div / Math.max(1, steps))}`;
+      }
+      setTitle(r.mode, modeTip);
+      setText(r.clock, CS_LABELS[t.cfg.name][t.cs]);
       const tifr = d[t.cfg.tifr], timsk = d[t.cfg.timsk];
-      const names: [number, string][] = [[0, 'TOV'], [1, 'OCFA'], [2, 'OCFB']];
-      if (t.cfg.bits === 16) names.push([5, 'ICF']);
+      const names: [number, string][] = [[0, 'OV'], [1, 'A'], [2, 'B']];
+      if (t.cfg.bits === 16) names.push([5, 'IC']);
       const html = names
         .map(([bit, nm]) => {
           const f = (tifr >> bit) & 1, e = (timsk >> bit) & 1;
-          return `<span class="tflag${f ? ' set' : ''}${e ? ' en' : ''}" title="${nm}${n}: flag ${f ? 'set' : 'clear'}, interrupt ${e ? 'enabled' : 'disabled'}">${nm}</span>`;
+          return `<span class="tflag${f ? ' set' : ''}${e ? ' en' : ''}" title="${nm} flag ${f ? 'set' : 'clear'}, interrupt ${e ? 'enabled' : 'disabled'}">${nm}</span>`;
         })
         .join('');
-      if (c.flags.innerHTML !== html) c.flags.innerHTML = html;
+      if (r.flags.innerHTML !== html) r.flags.innerHTML = html;
     }
   }
 }
 
 // ---------------------------------------------------------------------------
 
+/** Interrupt sources. Only enabled or already-taken ones are listed unless "all" is on. */
 export class InterruptsPanel implements Panel {
   el: HTMLElement;
   private rows: { tr: HTMLElement; en: HTMLElement; fl: HTMLElement; cnt: HTMLElement }[] = [];
   private gie = h('span', { class: 'mono' });
+  private empty = h('div', { class: 'muted small empty' }, 'No interrupts enabled.');
+  private showAll = false;
+  private allBtn: HTMLButtonElement;
 
   constructor(private mcu: ATmega328P) {
     const tbody = h('tbody');
@@ -427,32 +427,45 @@ export class InterruptsPanel implements Panel {
       tbody.append(tr);
       this.rows.push({ tr, en, fl, cnt });
     }
+    this.allBtn = h('button', { class: 'btn small ghost-link', onclick: () => {
+      this.showAll = !this.showAll;
+      this.render();
+    } }, 'Show all');
     this.el = h(
       'section',
       { class: 'panel' },
-      h('h2', {}, 'Interrupts ', h('span', { class: 'muted small' }, 'global I: '), this.gie),
-      h('div', { class: 'scroll-y' },
-        h('table', { class: 'tbl' },
-          h('thead', {}, h('tr', {}, h('th', {}, 'Vector'), h('th', {}, 'Source'), h('th', {}, 'Enabled'), h('th', {}, 'Flag'), h('th', { class: 'r' }, 'Taken'))),
-          tbody)),
+      h('div', { class: 'panel-head' }, h('h2', {}, 'Interrupts'), h('span', { class: 'muted small' }, 'I flag:'), this.gie, this.allBtn),
+      h('table', { class: 'tbl ints-tbl' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'Vector'), h('th', {}, 'Source'), h('th', { class: 'c' }, 'En'), h('th', { class: 'c' }, 'Flag'), h('th', { class: 'r' }, 'Taken'))),
+        tbody),
+      this.empty,
     );
   }
 
   render(): void {
     const pending = this.mcu.pendingInterrupt();
-    setText(this.gie, this.mcu.cpu.sreg & 0x80 ? 'on' : 'off');
-    setClass(this.gie, 'ok', !!(this.mcu.cpu.sreg & 0x80));
+    const gie = !!(this.mcu.cpu.sreg & 0x80);
+    setText(this.gie, gie ? 'on' : 'off');
+    setClass(this.gie, 'ok', gie);
+    setText(this.allBtn, this.showAll ? 'Show active' : 'Show all');
+    let shown = 0;
     this.mcu.interrupts.forEach((src, i) => {
       const r = this.rows[i];
       const en = src.enabled(), fl = src.displayFlag ? src.displayFlag() : src.flagged();
+      const taken = this.mcu.interruptCounts.get(src.vector) ?? 0;
+      const visible = this.showAll || en || taken > 0;
+      r.tr.style.display = visible ? '' : 'none';
+      if (!visible) return;
+      shown++;
       setText(r.en, en ? '●' : '·');
       setText(r.fl, fl ? '●' : '·');
       setClass(r.en, 'on', en);
       setClass(r.fl, 'on', fl);
-      setText(r.cnt, String(this.mcu.interruptCounts.get(src.vector) ?? 0));
+      setText(r.cnt, String(taken));
       setClass(r.tr, 'pending', pending === src);
       setClass(r.tr, 'active', en);
     });
+    this.empty.style.display = shown ? 'none' : '';
   }
 }
 

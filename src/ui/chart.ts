@@ -13,7 +13,7 @@ const WINDOWS: [string, number][] = [
   ['1M cycles', 1e6], ['10M cycles', 1e7], ['100M cycles', 1e8], ['Whole run', 0],
 ];
 
-const ROW_H = 30;
+const ROW_H = 34;
 const LABEL_W = 52;
 const AXIS_H = 20;
 
