@@ -75,12 +75,29 @@ export class Stk500 {
     await this.t.write(new Uint8Array([...bytes, CRC_EOP]));
     const head = await this.t.read(1, timeout);
     if (head[0] !== STK_INSYNC) {
-      throw new UploadError(`Bootloader out of sync (got 0x${head[0].toString(16)} instead of 0x14).`);
+      const rest = await this.quiet();
+      throw new UploadError(`Bootloader out of sync (received ${hexBytes([head[0], ...rest])} instead of 14).`);
     }
     const body = replyLen ? await this.t.read(replyLen, timeout) : new Uint8Array(0);
     const tail = await this.t.read(1, timeout);
-    if (tail[0] !== STK_OK) throw new UploadError(`Bootloader reported an error (0x${tail[0].toString(16)}).`);
+    if (tail[0] !== STK_OK) {
+      const rest = await this.quiet();
+      throw new UploadError(`Bootloader reported an error (received ${hexBytes([tail[0], ...rest])} instead of 10).`);
+    }
     return body;
+  }
+
+  /** Read and discard bytes until the line has been quiet for a moment. Returns what was dropped. */
+  private async quiet(silenceMs = 40, maxBytes = 512): Promise<number[]> {
+    const dropped: number[] = [];
+    while (dropped.length < maxBytes) {
+      try {
+        dropped.push((await this.t.read(1, silenceMs))[0]);
+      } catch {
+        break;
+      }
+    }
+    return dropped;
   }
 
   /** Pulse DTR/RTS so the board resets into its bootloader. */
@@ -88,24 +105,65 @@ export class Stk500 {
     await this.t.setSignals(false, false);
     await this.t.sleep(250);
     await this.t.setSignals(true, true);
-    await this.t.sleep(50);
+    // The Uno's fuses give the chip ~65 ms of start-up time after reset before Optiboot runs.
+    await this.t.sleep(100);
     await this.t.drain();
   }
 
+  /**
+   * Get in sync with the bootloader. Resetting the board puts noise on the line (often a 0x00 byte),
+   * so like avrdude we first send a couple of sync requests and throw the replies away, then scan the
+   * incoming bytes for the INSYNC/OK pair, then confirm with one strict request.
+   */
   async sync(attempts = 10): Promise<void> {
+    const req = new Uint8Array([STK_GET_SYNC, CRC_EOP]);
+    for (let i = 0; i < 2; i++) {
+      await this.t.write(req);
+      await this.quiet();
+    }
+    let seen: number[] = [];
     for (let i = 0; i < attempts; i++) {
+      await this.t.write(req);
+      seen = [];
+      let synced = false;
       try {
-        await this.t.drain();
-        await this.command([STK_GET_SYNC], 0, 200);
-        return;
+        while (seen.length < 16 && !synced) {
+          seen.push((await this.t.read(1, 300))[0]);
+          const n = seen.length;
+          synced = n >= 2 && seen[n - 2] === STK_INSYNC && seen[n - 1] === STK_OK;
+        }
       } catch {
-        await this.t.sleep(50);
+        /* timeout: try again */
+      }
+      if (synced) {
+        await this.quiet(); // drop replies to earlier requests
+        try {
+          await this.command([STK_GET_SYNC], 0, 300);
+          return;
+        } catch {
+          /* still noisy: keep trying */
+        }
       }
     }
     throw new UploadError(
-      'No answer from the bootloader. Check that the right port is selected, nothing else (Arduino IDE serial ' +
-        'monitor) has it open, and try the other upload speed.',
+      'No answer from the bootloader' + (seen.length ? ` (last bytes received: ${hexBytes(seen)})` : '') +
+        '. Check that the right port is selected, nothing else (like the Arduino IDE serial monitor) has it open, ' +
+        'and try the other upload speed.',
     );
+  }
+
+  /** Run a bootloader operation, re-syncing and retrying if the line glitches. */
+  private async retry<T>(what: string, op: () => Promise<T>, tries = 3): Promise<T> {
+    for (let i = 1; ; i++) {
+      try {
+        return await op();
+      } catch (e) {
+        if (i >= tries || !(e instanceof UploadError)) throw e;
+        this.log(`${what}: ${e.message} Re-syncing and retrying…`);
+        await this.quiet();
+        await this.sync(5);
+      }
+    }
   }
 
   async readSignature(): Promise<number[]> {
@@ -135,24 +193,35 @@ export class Stk500 {
     const padded = new Uint8Array(pages * PAGE_SIZE).fill(0xff);
     padded.set(image);
 
-    onProgress({ phase: 'reset', done: 0, total: pages });
-    await this.reset();
-    onProgress({ phase: 'sync', done: 0, total: pages });
-    await this.sync();
-    const sig = await this.readSignature();
+    // If noise made Optiboot give up and start the old program, a second reset brings it back.
+    for (let attempt = 1; ; attempt++) {
+      onProgress({ phase: 'reset', done: 0, total: pages });
+      await this.reset();
+      onProgress({ phase: 'sync', done: 0, total: pages });
+      try {
+        await this.sync();
+        break;
+      } catch (e) {
+        if (attempt >= 2) throw e;
+        this.log(`${(e as Error).message} Resetting again…`);
+      }
+    }
+    this.log('In sync with the bootloader.');
+    const sig = await this.retry('Reading signature', () => this.readSignature());
     const sigText = sig.map((b) => b.toString(16).padStart(2, '0')).join(' ');
     if (sameBytes(sig, SIG_328)) this.log(`Signature ${sigText}: ATmega328 (non-P). Continuing.`);
     else if (!sameBytes(sig, SIG_328P)) {
       throw new UploadError(`Unexpected chip signature ${sigText}. This uploader only supports the ATmega328P (Arduino Uno).`);
     } else this.log(`Signature ${sigText}: ATmega328P`);
 
-    await this.command([STK_ENTER_PROGMODE]);
+    await this.retry('Entering programming mode', () => this.command([STK_ENTER_PROGMODE]));
     for (let p = 0; p < pages; p++) {
-      await this.writePage(p * PAGE_SIZE, padded.subarray(p * PAGE_SIZE, (p + 1) * PAGE_SIZE));
+      const page = padded.subarray(p * PAGE_SIZE, (p + 1) * PAGE_SIZE);
+      await this.retry(`Writing page ${p + 1}`, () => this.writePage(p * PAGE_SIZE, page));
       onProgress({ phase: 'write', done: p + 1, total: pages });
     }
     for (let p = 0; p < pages; p++) {
-      const got = await this.readPage(p * PAGE_SIZE, PAGE_SIZE);
+      const got = await this.retry(`Reading page ${p + 1}`, () => this.readPage(p * PAGE_SIZE, PAGE_SIZE));
       const want = padded.subarray(p * PAGE_SIZE, (p + 1) * PAGE_SIZE);
       for (let i = 0; i < PAGE_SIZE; i++) {
         if (got[i] !== want[i]) {
@@ -168,6 +237,10 @@ export class Stk500 {
     await this.command([STK_LEAVE_PROGMODE]);
     onProgress({ phase: 'done', done: pages, total: pages });
   }
+}
+
+function hexBytes(bytes: number[]): string {
+  return bytes.slice(0, 24).map((b) => b.toString(16).padStart(2, '0')).join(' ') + (bytes.length > 24 ? ' …' : '');
 }
 
 function sameBytes(a: number[], b: number[]): boolean {

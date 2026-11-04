@@ -16,6 +16,14 @@ class FakeOptiboot implements Transport {
   private dtr = false;
   /** Bytes of noise the running sketch prints before reset. */
   noise = [0x48, 0x69, 0x0a];
+  /** Inject a glitch byte before the reply to the Nth command after reset (1-based). */
+  glitchBeforeReply = new Map<number, number[]>();
+  /** Bytes the board's TX glitches out right after a reset (arrive after the host drained). */
+  resetGlitch: number[] = [];
+  /** Real Optiboot behavior: a bad command byte makes it exit to the old program. */
+  exitOnGarbage = true;
+  private commandCount = 0;
+  private pendingResetGlitch: number[] = [];
 
   constructor() {
     for (let i = BOOTLOADER_START; i < 0x8000; i++) this.flash[i] = 0xb0; // recognizable bootloader bytes
@@ -28,6 +36,8 @@ class FakeOptiboot implements Transport {
       this.inBootloader = true;
       this.started = false;
       this.rx = [];
+      this.commandCount = 0;
+      this.pendingResetGlitch = [...this.resetGlitch];
     }
     this.dtr = dtr;
   }
@@ -40,6 +50,7 @@ class FakeOptiboot implements Transport {
     return new Uint8Array(this.tx.splice(0, n));
   }
   async write(data: Uint8Array): Promise<void> {
+    if (this.pendingResetGlitch.length) this.tx.push(...this.pendingResetGlitch.splice(0));
     if (!this.inBootloader) return; // the sketch ignores us
     this.rx.push(...data);
     this.process();
@@ -53,9 +64,16 @@ class FakeOptiboot implements Transport {
       if (need === null || r.length < need) return;
       const cmd = r.splice(0, need);
       if (cmd[cmd.length - 1] !== 0x20) {
+        if (this.exitOnGarbage) {
+          this.inBootloader = false; // watchdog reset -> old program
+          return;
+        }
         this.tx.push(0x15); // STK_NOSYNC
         continue;
       }
+      this.commandCount++;
+      const glitch = this.glitchBeforeReply.get(this.commandCount);
+      if (glitch) this.tx.push(...glitch);
       this.tx.push(0x14);
       switch (cmd[0]) {
         case 0x30: case 0x50: break;
@@ -135,5 +153,41 @@ describe('STK500 upload to Optiboot', () => {
     const board = new FakeOptiboot();
     board.setSignals = async () => {}; // reset line not connected
     await expect(new Stk500(board).upload(build('blink'))).rejects.toThrow(/No answer from the bootloader/);
+  });
+
+  it('recovers from a stray 0x00 before a reply (seen on a real Uno)', async () => {
+    const board = new FakeOptiboot();
+    // Command 1-3 are the sync requests; 4 is the confirming sync; 5 is READ_SIGN.
+    board.glitchBeforeReply.set(5, [0x00]);
+    const log: string[] = [];
+    const image = build('blink');
+    await new Stk500(board, (m) => log.push(m)).upload(image);
+    expect([...board.flash.subarray(0, image.length)]).toEqual([...image]);
+    expect(log.some((l) => l.includes('Re-syncing'))).toBe(true);
+  });
+
+  it('ignores noise on the line right after reset', async () => {
+    const board = new FakeOptiboot();
+    board.resetGlitch = [0x00, 0xf8, 0x00];
+    const image = build('timer1');
+    await new Stk500(board).upload(image);
+    expect([...board.flash.subarray(0, image.length)]).toEqual([...image]);
+  });
+
+  it('resets again if the bootloader quit to the old program', async () => {
+    const board = new FakeOptiboot();
+    const realWrite = board.write.bind(board);
+    let first = true;
+    board.write = async (data) => {
+      if (first && board.inBootloader) {
+        first = false;
+        return realWrite(new Uint8Array([0x00, 0x00])); // garbage: Optiboot exits
+      }
+      return realWrite(data);
+    };
+    const image = build('blink');
+    await new Stk500(board).upload(image);
+    expect([...board.flash.subarray(0, image.length)]).toEqual([...image]);
+    expect(board.started).toBe(true);
   });
 });
