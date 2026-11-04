@@ -100,43 +100,44 @@ export class Stk500 {
     return dropped;
   }
 
-  /** Pulse DTR/RTS so the board resets into its bootloader. */
+  /** Pulse DTR/RTS so the board resets into its bootloader (same timing as avrdude). */
   async reset(): Promise<void> {
     await this.t.setSignals(false, false);
     await this.t.sleep(250);
     await this.t.setSignals(true, true);
-    // The Uno's fuses give the chip ~65 ms of start-up time after reset before Optiboot runs.
-    await this.t.sleep(100);
-    await this.t.drain();
+    await this.t.sleep(50);
   }
 
   /**
-   * Get in sync with the bootloader. Resetting the board puts noise on the line (often a 0x00 byte),
-   * so like avrdude we first send a couple of sync requests and throw the replies away, then scan the
-   * incoming bytes for the INSYNC/OK pair, then confirm with one strict request.
+   * Get in sync with the bootloader.
+   *
+   * After a reset the Uno needs ~65 ms to start, then Optiboot blinks the LED for ~375 ms. During
+   * the blink it can only buffer about 3 received bytes, and if it then reads a broken command it
+   * gives up and starts the old program. So: wait like avrdude does, send ONE sync request at a
+   * time, and give it plenty of time to answer before sending another. Noise bytes on the line
+   * (often a 0x00 from the reset) are skipped while scanning for the INSYNC/OK pair.
    */
-  async sync(attempts = 10): Promise<void> {
+  async sync(attempts = 8, firstWaitMs = 250): Promise<void> {
     const req = new Uint8Array([STK_GET_SYNC, CRC_EOP]);
-    for (let i = 0; i < 2; i++) {
-      await this.t.write(req);
-      await this.quiet();
-    }
+    if (firstWaitMs > 0) await this.quiet(firstWaitMs); // also drops noise from the reset
     let seen: number[] = [];
     for (let i = 0; i < attempts; i++) {
       await this.t.write(req);
       seen = [];
       let synced = false;
       try {
+        // The first answer can take until the LED blinking ends (~450 ms after reset).
+        const timeout = i === 0 ? 600 : 300;
         while (seen.length < 16 && !synced) {
-          seen.push((await this.t.read(1, 300))[0]);
+          seen.push((await this.t.read(1, timeout))[0]);
           const n = seen.length;
           synced = n >= 2 && seen[n - 2] === STK_INSYNC && seen[n - 1] === STK_OK;
         }
       } catch {
-        /* timeout: try again */
+        /* no answer yet */
       }
       if (synced) {
-        await this.quiet(); // drop replies to earlier requests
+        await this.quiet(); // drop late replies to earlier requests
         try {
           await this.command([STK_GET_SYNC], 0, 300);
           return;
@@ -146,9 +147,9 @@ export class Stk500 {
       }
     }
     throw new UploadError(
-      'No answer from the bootloader' + (seen.length ? ` (last bytes received: ${hexBytes(seen)})` : '') +
-        '. Check that the right port is selected, nothing else (like the Arduino IDE serial monitor) has it open, ' +
-        'and try the other upload speed.',
+      'No answer from the bootloader' + (seen.length ? ` (last bytes received: ${hexBytes(seen)})` : ', nothing was received') +
+        '. Check that the right port is selected and that nothing else (like the Arduino IDE serial monitor) has it open. ' +
+        'If it keeps failing, press the board\'s reset button right after clicking Upload.',
     );
   }
 
@@ -161,7 +162,7 @@ export class Stk500 {
         if (i >= tries || !(e instanceof UploadError)) throw e;
         this.log(`${what}: ${e.message} Re-syncing and retrying…`);
         await this.quiet();
-        await this.sync(5);
+        await this.sync(5, 0);
       }
     }
   }

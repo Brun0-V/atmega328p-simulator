@@ -3,8 +3,19 @@ import { assemble } from '../src/core/assembler';
 import { EXAMPLES } from '../src/examples';
 import { BOOTLOADER_START, Stk500, UploadError, checkImage, wordsToBytes, type Transport } from '../src/upload/stk500';
 
-/** Simulated Optiboot on an ATmega328P, speaking STK500v1. */
+/**
+ * Simulated Optiboot on an ATmega328P, speaking STK500v1, with realistic timing (virtual clock):
+ * ~65 ms start-up after reset (bytes lost), then a ~375 ms LED blink during which only 3 received
+ * bytes are buffered (more are dropped), then it listens. A broken command or 1 s without data
+ * makes it start the old program.
+ */
 class FakeOptiboot implements Transport {
+  static STARTUP_MS = 65;
+  static LISTEN_MS = 65 + 375;
+  now = 0;
+  private resetAt = -1e9;
+  private hold: number[] = [];
+  private lastRx = 0;
   flash = new Uint8Array(0x8000).fill(0xff);
   inBootloader = false;
   started = false;
@@ -36,23 +47,51 @@ class FakeOptiboot implements Transport {
       this.inBootloader = true;
       this.started = false;
       this.rx = [];
+      this.hold = [];
+      this.resetAt = this.now;
+      this.lastRx = this.now;
       this.commandCount = 0;
       this.pendingResetGlitch = [...this.resetGlitch];
     }
     this.dtr = dtr;
   }
-  async sleep(): Promise<void> {}
+  private advance(ms: number): void {
+    this.now += ms;
+    const t = this.now - this.resetAt;
+    if (this.inBootloader && t >= FakeOptiboot.LISTEN_MS && this.hold.length) {
+      this.rx.push(...this.hold.splice(0));
+      this.lastRx = this.now;
+      this.process();
+    }
+    if (this.inBootloader && t >= FakeOptiboot.LISTEN_MS && this.now - Math.max(this.lastRx, this.resetAt + FakeOptiboot.LISTEN_MS) > 1000) {
+      this.inBootloader = false; // watchdog timeout: start the old program
+    }
+  }
+  async sleep(ms: number): Promise<void> {
+    this.advance(ms);
+  }
   async drain(): Promise<void> {
     this.tx = [];
   }
-  async read(n: number): Promise<Uint8Array> {
+  async read(n: number, timeoutMs: number): Promise<Uint8Array> {
+    this.advance(1);
+    if (this.tx.length < n) this.advance(timeoutMs);
     if (this.tx.length < n) throw new UploadError('Timed out waiting for the board.');
     return new Uint8Array(this.tx.splice(0, n));
   }
   async write(data: Uint8Array): Promise<void> {
     if (this.pendingResetGlitch.length) this.tx.push(...this.pendingResetGlitch.splice(0));
+    this.advance(Math.ceil(data.length / 11)); // ~11 bytes per ms at 115200 baud
     if (!this.inBootloader) return; // the sketch ignores us
+    const t = this.now - this.resetAt;
+    if (t < FakeOptiboot.STARTUP_MS) return; // chip still starting: bytes are lost
+    if (t < FakeOptiboot.LISTEN_MS) {
+      // LED blink: the UART buffers 3 bytes, the rest overrun and are lost.
+      for (const b of data) if (this.hold.length < 3) this.hold.push(b);
+      return;
+    }
     this.rx.push(...data);
+    this.lastRx = this.now;
     this.process();
   }
 
