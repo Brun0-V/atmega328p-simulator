@@ -314,3 +314,9 @@ dialog.arduino-window {
 .upload-log { margin: 6px 0 0; max-height: 110px; overflow: auto; font: 11.5px/1.4 var(--mono); color: var(--muted); white-space: pre-wrap; }
 .board-console { height: 120px; }
 .arduino-window .console-input { width: 100%; margin-top: 6px; }
+
+.arduino-window .check { gap: 8px; cursor: pointer; color: #cbd5e1; flex-wrap: nowrap; align-items: flex-start; }
+.arduino-window .check input { flex: none; margin: 2px 0 0; }
+.trace-box { margin-top: 6px; }
+.trace-box summary { cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.upload-log.trace { max-height: 180px; font-size: 10.5px; }

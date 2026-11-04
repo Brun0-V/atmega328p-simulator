@@ -24,6 +24,10 @@ export class ArduinoWindow {
   private progress = h('div', { class: 'bar' }, h('div', { class: 'bar-fill' }));
   private status = h('div', { class: 'small' });
   private log = h('pre', { class: 'upload-log' });
+  private manual = h('input', { type: 'checkbox' });
+  private traceEl = h('pre', { class: 'upload-log trace' });
+  private traceLines: string[] = [];
+  private copyBtn = h('button', { class: 'btn small', title: 'Copy the log and wire trace to paste into a bug report' }, 'Copy log');
 
   private monBaud = h('select', { title: 'Serial monitor baud rate (must match UBRR in your program)' },
     ...MONITOR_BAUDS.map((b) => h('option', { value: String(b) }, `${b} baud`)));
@@ -42,9 +46,13 @@ export class ArduinoWindow {
             'fuses are never touched, and every page is read back and verified.'),
           h('div', { class: 'row' }, this.portBtn, this.portLabel),
           h('div', { class: 'row' }, h('label', { class: 'field' }, 'Bootloader', this.speedSel), this.uploadBtn),
+          h('label', { class: 'row small check', title: 'Use this if automatic reset does not work: click Upload, then press the reset button on the board.' },
+            this.manual, 'Reset manually (press the board’s reset button after clicking Upload)'),
           this.progress,
           this.status,
           this.log,
+          h('details', { class: 'trace-box' }, h('summary', { class: 'small muted' }, 'Wire trace (every byte sent and received) ', this.copyBtn),
+            this.traceEl),
           h('h3', {}, 'Board serial monitor'),
           h('div', { class: 'row' }, this.monBaud, this.monBtn,
             h('button', { class: 'btn small', onclick: () => this.setMon('') }, 'Clear')),
@@ -61,6 +69,10 @@ export class ArduinoWindow {
 
     this.portBtn.addEventListener('click', () => this.choosePort());
     this.uploadBtn.addEventListener('click', () => this.upload());
+    this.copyBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      void this.copyLog();
+    });
     this.monBtn.addEventListener('click', () => this.toggleMonitor());
     this.monIn.addEventListener('keydown', (e) => {
       e.stopPropagation();
@@ -86,6 +98,23 @@ export class ArduinoWindow {
     this.log.textContent += msg + '\n';
     this.log.scrollTop = this.log.scrollHeight;
   }
+  private async copyLog(): Promise<void> {
+    const text = [
+      `Status: ${this.status.textContent}`,
+      `Port: ${this.portLabel.textContent}  Speed: ${this.speedSel.value}  Manual reset: ${this.manual.checked}`,
+      `Browser: ${navigator.userAgent}`,
+      '', '--- Log ---', this.log.textContent ?? '',
+      '--- Wire trace ---', ...this.traceLines,
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setText(this.copyBtn, 'Copied');
+    } catch {
+      setText(this.copyBtn, 'Copy failed');
+    }
+    setTimeout(() => setText(this.copyBtn, 'Copy log'), 1500);
+  }
+
   private setProgress(frac: number): void {
     (this.progress.firstChild as HTMLElement).style.width = `${Math.round(frac * 100)}%`;
   }
@@ -133,6 +162,9 @@ export class ArduinoWindow {
     this.busy = true;
     this.updateButtons();
     this.log.textContent = '';
+    this.traceLines = [];
+    this.traceEl.textContent = '';
+    const t0 = performance.now();
     this.setProgress(0);
     await this.closeConn();
     const speeds = this.speedSel.value === 'auto' ? [115200, 57600] : [Number(this.speedSel.value)];
@@ -142,14 +174,19 @@ export class ArduinoWindow {
       try {
         this.addLog(`Opening port at ${baud} baud…`);
         conn = await SerialConnection.open(this.port, baud);
-        const stk = new Stk500(conn, (m) => this.addLog(m));
-        this.say('Resetting the board…');
+        conn.trace = (dir, detail) => this.trace(t0, `${baud} ${dir} ${detail}`);
+        this.trace(t0, `${baud} port opened`);
+        const stk = new Stk500(conn, (m) => {
+          this.addLog(m);
+          this.trace(t0, `-- ${m}`);
+        });
+        this.say(this.manual.checked ? 'Press the reset button on the board now…' : 'Resetting the board…');
         await stk.upload(image, (p) => {
           const labels = { reset: 'Resetting…', sync: 'Waiting for bootloader…', write: 'Writing', verify: 'Verifying', done: 'Done' };
           if (p.phase === 'write') this.setProgress((p.done / p.total) * 0.5);
           if (p.phase === 'verify') this.setProgress(0.5 + (p.done / p.total) * 0.5);
-          this.say(`${labels[p.phase]}${p.phase === 'write' || p.phase === 'verify' ? ` page ${p.done}/${p.total}` : ''}`);
-        });
+          this.say(p.message ?? `${labels[p.phase]}${p.phase === 'write' || p.phase === 'verify' ? ` page ${p.done}/${p.total}` : ''}`);
+        }, { manualReset: this.manual.checked });
         this.setProgress(1);
         this.addLog(`Wrote and verified ${image.length} bytes. The program is running.`);
         this.say(`Uploaded ${image.length} bytes and verified. The program is running on the board.`, 'ok');
@@ -159,14 +196,23 @@ export class ArduinoWindow {
       } catch (e) {
         lastErr = e;
         this.addLog(`Failed at ${baud} baud: ${(e as Error).message}`);
+        this.trace(t0, `-- failed: ${(e as Error).message}`);
         if (conn) await conn.close();
       }
     }
     if (lastErr) {
       this.say(lastErr instanceof UploadError ? lastErr.message : `Upload failed: ${(lastErr as Error).message}`, 'err');
+      this.addLog('Open "Wire trace" below and use "Copy log" to share exactly what happened.');
     }
     this.busy = false;
     this.updateButtons();
+  }
+
+  private trace(t0: number, line: string): void {
+    if (this.traceLines.length >= 600) return;
+    const ms = Math.round(performance.now() - t0);
+    this.traceLines.push(`+${String(ms).padStart(5)}ms ${line}`);
+    this.traceEl.textContent = this.traceLines.join('\n');
   }
 
   private async toggleMonitor(): Promise<void> {

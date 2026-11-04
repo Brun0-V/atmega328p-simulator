@@ -12,7 +12,10 @@ import { BOOTLOADER_START, Stk500, UploadError, checkImage, wordsToBytes, type T
 class FakeOptiboot implements Transport {
   static STARTUP_MS = 65;
   static LISTEN_MS = 65 + 375;
-  now = 0;
+  clock = 0;
+  /** Virtual time at which someone presses the board's reset button. */
+  pressResetAt: number | null = null;
+  dtrResets = true;
   private resetAt = -1e9;
   private hold: number[] = [];
   private lastRx = 0;
@@ -41,29 +44,42 @@ class FakeOptiboot implements Transport {
     this.tx.push(...this.noise);
   }
 
+  now(): number {
+    return this.clock;
+  }
+
   async setSignals(dtr: boolean): Promise<void> {
-    if (dtr && !this.dtr) {
-      // DTR asserted: the board resets into the bootloader.
-      this.inBootloader = true;
-      this.started = false;
-      this.rx = [];
-      this.hold = [];
-      this.resetAt = this.now;
-      this.lastRx = this.now;
-      this.commandCount = 0;
-      this.pendingResetGlitch = [...this.resetGlitch];
-    }
+    if (dtr && !this.dtr && this.dtrResets) this.resetChip();
     this.dtr = dtr;
   }
+
+  /** External reset (DTR pulse or reset button): Optiboot starts. */
+  private resetChip(): void {
+    this.inBootloader = true;
+    this.started = false;
+    this.rx = [];
+    this.hold = [];
+    this.resetAt = this.clock;
+    this.lastRx = this.clock;
+    this.commandCount = 0;
+    this.pendingResetGlitch = [...this.resetGlitch];
+  }
+
   private advance(ms: number): void {
-    this.now += ms;
-    const t = this.now - this.resetAt;
+    const before = this.clock;
+    this.clock += ms;
+    if (this.pressResetAt !== null && before < this.pressResetAt && this.clock >= this.pressResetAt) {
+      this.clock = this.pressResetAt;
+      this.resetChip();
+      this.clock = before + ms;
+    }
+    const t = this.clock - this.resetAt;
     if (this.inBootloader && t >= FakeOptiboot.LISTEN_MS && this.hold.length) {
       this.rx.push(...this.hold.splice(0));
-      this.lastRx = this.now;
+      this.lastRx = this.clock;
       this.process();
     }
-    if (this.inBootloader && t >= FakeOptiboot.LISTEN_MS && this.now - Math.max(this.lastRx, this.resetAt + FakeOptiboot.LISTEN_MS) > 1000) {
+    if (this.inBootloader && t >= FakeOptiboot.LISTEN_MS && this.clock - Math.max(this.lastRx, this.resetAt + FakeOptiboot.LISTEN_MS) > 1000) {
       this.inBootloader = false; // watchdog timeout: start the old program
     }
   }
@@ -83,7 +99,7 @@ class FakeOptiboot implements Transport {
     if (this.pendingResetGlitch.length) this.tx.push(...this.pendingResetGlitch.splice(0));
     this.advance(Math.ceil(data.length / 11)); // ~11 bytes per ms at 115200 baud
     if (!this.inBootloader) return; // the sketch ignores us
-    const t = this.now - this.resetAt;
+    const t = this.clock - this.resetAt;
     if (t < FakeOptiboot.STARTUP_MS) return; // chip still starting: bytes are lost
     if (t < FakeOptiboot.LISTEN_MS) {
       // LED blink: the UART buffers 3 bytes, the rest overrun and are lost.
@@ -91,7 +107,7 @@ class FakeOptiboot implements Transport {
       return;
     }
     this.rx.push(...data);
-    this.lastRx = this.now;
+    this.lastRx = this.clock;
     this.process();
   }
 
@@ -228,5 +244,21 @@ describe('STK500 upload to Optiboot', () => {
     await new Stk500(board).upload(image);
     expect([...board.flash.subarray(0, image.length)]).toEqual([...image]);
     expect(board.started).toBe(true);
+  });
+
+  it('manual reset: waits for the reset button and then uploads', async () => {
+    const board = new FakeOptiboot();
+    board.dtrResets = false; // auto-reset line not working on this board
+    board.pressResetAt = 3000;
+    const image = build('blink');
+    await new Stk500(board).upload(image, () => {}, { manualReset: true });
+    expect([...board.flash.subarray(0, image.length)]).toEqual([...image]);
+    expect(board.started).toBe(true);
+  });
+
+  it('auto reset fails cleanly when the reset line does nothing', async () => {
+    const board = new FakeOptiboot();
+    board.dtrResets = false;
+    await expect(new Stk500(board).upload(build('blink'))).rejects.toThrow(/Reset manually/);
   });
 });

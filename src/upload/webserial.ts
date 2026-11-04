@@ -42,6 +42,8 @@ export class SerialConnection implements Transport {
   private readLoop: Promise<void> | null = null;
   /** Called with every chunk received (used by the serial monitor). */
   onData: ((bytes: Uint8Array) => void) | null = null;
+  /** Called for every chunk sent/received and every signal change (diagnostic log). */
+  trace: ((dir: 'TX' | 'RX' | 'SIG', detail: string) => void) | null = null;
 
   private constructor(readonly port: SerialPortLike) {}
 
@@ -66,6 +68,7 @@ export class SerialConnection implements Transport {
         const { value, done } = await this.reader!.read();
         if (done) break;
         if (value) {
+          this.trace?.('RX', hexChunk(value));
           if (this.onData) this.onData(value);
           else for (const b of value) this.buf.push(b);
           for (const w of this.waiters.splice(0)) w();
@@ -79,7 +82,12 @@ export class SerialConnection implements Transport {
   }
 
   async write(data: Uint8Array): Promise<void> {
+    this.trace?.('TX', hexChunk(data));
     await this.writer!.write(data);
+  }
+
+  now(): number {
+    return performance.now();
   }
 
   async read(n: number, timeoutMs: number): Promise<Uint8Array> {
@@ -105,7 +113,13 @@ export class SerialConnection implements Transport {
   }
 
   async setSignals(dtr: boolean, rts: boolean): Promise<void> {
-    await this.port.setSignals({ dataTerminalReady: dtr, requestToSend: rts });
+    this.trace?.('SIG', `DTR=${+dtr} RTS=${+rts}`);
+    try {
+      await this.port.setSignals({ dataTerminalReady: dtr, requestToSend: rts });
+    } catch (e) {
+      this.trace?.('SIG', `setSignals failed: ${(e as Error).message}`);
+      throw new UploadError(`Could not toggle the reset line (${(e as Error).message}). Try "Reset manually".`);
+    }
   }
 
   sleep(ms: number): Promise<void> {
@@ -132,4 +146,9 @@ export class SerialConnection implements Transport {
       /* already closed */
     }
   }
+}
+
+function hexChunk(bytes: Uint8Array): string {
+  const parts = Array.from(bytes.subarray(0, 32), (b) => b.toString(16).padStart(2, '0'));
+  return parts.join(' ') + (bytes.length > 32 ? ` … (${bytes.length} bytes)` : '');
 }

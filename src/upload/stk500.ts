@@ -33,6 +33,23 @@ export interface Transport {
   /** Set the DTR and RTS lines (true = asserted). */
   setSignals(dtr: boolean, rts: boolean): Promise<void>;
   sleep(ms: number): Promise<void>;
+  /** Milliseconds, monotonic. */
+  now(): number;
+}
+
+export interface UploadOptions {
+  /** Don't toggle DTR/RTS; wait for the user to press the board's reset button instead. */
+  manualReset?: boolean;
+}
+
+export interface SyncOptions {
+  attempts?: number;
+  /** Wait for this much silence before the first request (drops reset noise). */
+  firstWaitMs?: number;
+  /** Minimum time between sync requests, so Optiboot never gets more than one while it blinks. */
+  gapMs?: number;
+  /** How long the first request may take to be answered. */
+  firstTimeoutMs?: number;
 }
 
 export class UploadError extends Error {}
@@ -117,24 +134,28 @@ export class Stk500 {
    * time, and give it plenty of time to answer before sending another. Noise bytes on the line
    * (often a 0x00 from the reset) are skipped while scanning for the INSYNC/OK pair.
    */
-  async sync(attempts = 8, firstWaitMs = 250): Promise<void> {
+  async sync(opts: SyncOptions = {}): Promise<void> {
+    const { attempts = 8, firstWaitMs = 250, gapMs = 450, firstTimeoutMs = 600 } = opts;
     const req = new Uint8Array([STK_GET_SYNC, CRC_EOP]);
     if (firstWaitMs > 0) await this.quiet(firstWaitMs); // also drops noise from the reset
     let seen: number[] = [];
     for (let i = 0; i < attempts; i++) {
       await this.t.write(req);
+      // Never send the next request before the gap is over, even if noise keeps arriving.
+      const deadline = this.t.now() + (i === 0 ? Math.max(firstTimeoutMs, gapMs) : gapMs);
       seen = [];
       let synced = false;
-      try {
-        // The first answer can take until the LED blinking ends (~450 ms after reset).
-        const timeout = i === 0 ? 600 : 300;
-        while (seen.length < 16 && !synced) {
-          seen.push((await this.t.read(1, timeout))[0]);
-          const n = seen.length;
-          synced = n >= 2 && seen[n - 2] === STK_INSYNC && seen[n - 1] === STK_OK;
+      while (!synced) {
+        const left = deadline - this.t.now();
+        if (left <= 0) break;
+        try {
+          seen.push((await this.t.read(1, left))[0]);
+        } catch {
+          break; // no more bytes before the deadline
         }
-      } catch {
-        /* no answer yet */
+        if (seen.length > 64) seen.shift();
+        const n = seen.length;
+        synced = n >= 2 && seen[n - 2] === STK_INSYNC && seen[n - 1] === STK_OK;
       }
       if (synced) {
         await this.quiet(); // drop late replies to earlier requests
@@ -148,8 +169,8 @@ export class Stk500 {
     }
     throw new UploadError(
       'No answer from the bootloader' + (seen.length ? ` (last bytes received: ${hexBytes(seen)})` : ', nothing was received') +
-        '. Check that the right port is selected and that nothing else (like the Arduino IDE serial monitor) has it open. ' +
-        'If it keeps failing, press the board\'s reset button right after clicking Upload.',
+        '. Check the port, close anything else using it (like the Arduino IDE serial monitor), ' +
+        'or tick "Reset manually" and press the board\'s reset button.',
     );
   }
 
@@ -162,7 +183,7 @@ export class Stk500 {
         if (i >= tries || !(e instanceof UploadError)) throw e;
         this.log(`${what}: ${e.message} Re-syncing and retrying…`);
         await this.quiet();
-        await this.sync(5, 0);
+        await this.sync({ attempts: 5, firstWaitMs: 0, gapMs: 300, firstTimeoutMs: 300 });
       }
     }
   }
@@ -188,14 +209,25 @@ export class Stk500 {
   }
 
   /** Full upload: reset, sync, check the chip, write, verify, start the program. */
-  async upload(image: Uint8Array, onProgress: (p: UploadProgress) => void = () => {}): Promise<void> {
+  async upload(
+    image: Uint8Array,
+    onProgress: (p: UploadProgress) => void = () => {},
+    opts: UploadOptions = {},
+  ): Promise<void> {
     checkImage(image);
     const pages = Math.ceil(image.length / PAGE_SIZE);
     const padded = new Uint8Array(pages * PAGE_SIZE).fill(0xff);
     padded.set(image);
 
+    if (opts.manualReset) {
+      // Keep asking for ~15 s, one request every 500 ms, while the user presses reset.
+      onProgress({ phase: 'sync', done: 0, total: pages, message: 'Press the reset button on the board now' });
+      this.log('Waiting for the bootloader: press the reset button on the board now.');
+      await this.t.drain();
+      await this.sync({ attempts: 30, firstWaitMs: 0, gapMs: 500, firstTimeoutMs: 500 });
+    }
     // If noise made Optiboot give up and start the old program, a second reset brings it back.
-    for (let attempt = 1; ; attempt++) {
+    for (let attempt = 1; !opts.manualReset; attempt++) {
       onProgress({ phase: 'reset', done: 0, total: pages });
       await this.reset();
       onProgress({ phase: 'sync', done: 0, total: pages });
