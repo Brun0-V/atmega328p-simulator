@@ -192,15 +192,16 @@ const app = document.getElementById('app')!;
 app.append(
   toolbar,
   h('main', { class: 'layout' },
-    h('div', { class: 'area-editor' }, editorPanel),
-    h('div', { class: 'col area-cpu' }, cpuPanel.el, regPanel.el),
-    h('div', { class: 'col area-io' }, portsPanel.el, usartPanel.el),
-    h('div', { class: 'area-chart' }, chart.el),
-    h('div', { class: 'area-mem' }, memPanel.el),
-    h('div', { class: 'col area-periph' }, timersPanel.el, intPanel.el)),
+    h('div', { class: 'col area-editor' }, editorPanel),
+    h('div', { class: 'col area-cpu' }, cpuPanel.el, regPanel.el, intPanel.el, memPanel.el),
+    h('div', { class: 'col area-periph' }, portsPanel.el, chart.el, timersPanel.el, usartPanel.el)),
   helpDialog,
   arduino.el,
 );
+// The code column sticks just below the toolbar, whose height changes when it wraps.
+new ResizeObserver(() => {
+  document.documentElement.style.setProperty('--toolbar-h', `${toolbar.offsetHeight + 10}px`);
+}).observe(toolbar);
 
 // ---------------------------------------------------------------------------
 // Actions

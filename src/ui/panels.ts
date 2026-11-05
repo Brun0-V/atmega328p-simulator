@@ -356,9 +356,9 @@ export class TimersPanel implements Panel {
       tbody.append(r.tr);
       this.rows.push(r);
     }
-    this.el = h('section', { class: 'panel' }, h('h2', {}, 'Timers'),
+    this.el = h('section', { class: 'panel timers-panel' }, h('h2', {}, 'Timers'),
       h('table', { class: 'tbl timers-tbl' },
-        h('thead', {}, h('tr', {}, ...['', 'TCNT', 'TOP', 'OCR A', 'OCR B', 'Mode', 'Clock', 'Flags'].map((x) => h('th', {}, x)))),
+        h('thead', {}, h('tr', {}, ...['', 'TCNT', 'TOP', 'OCRA', 'OCRB', 'Mode', 'Clock', 'Flags'].map((x) => h('th', {}, x)))),
         tbody));
   }
 

@@ -77,31 +77,27 @@ input.fcpu { width: 54px; }
 .pill.err { color: var(--err); }
 
 /* ---------- Layout ---------- */
+/* Three columns: code | CPU | peripherals. The code column stays in view while the others scroll. */
 .layout {
   display: grid;
-  grid-template-columns: minmax(420px, 1.3fr) minmax(340px, 1fr) minmax(340px, 1fr);
-  grid-template-areas:
-    'editor cpu io'
-    'chart chart chart'
-    'mem periph periph';
+  grid-template-columns: minmax(400px, 1.1fr) minmax(340px, 0.95fr) minmax(380px, 1.1fr);
+  grid-template-areas: 'editor cpu periph';
   gap: 10px; padding: 10px 16px 24px;
   align-items: start;
 }
-.area-editor { grid-area: editor; min-width: 0; }
+.area-editor { grid-area: editor; position: sticky; top: var(--toolbar-h, 57px); }
 .area-cpu { grid-area: cpu; }
-.area-io { grid-area: io; }
-.area-chart { grid-area: chart; min-width: 0; }
-.area-mem { grid-area: mem; min-width: 0; }
 .area-periph { grid-area: periph; }
 .col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 @media (max-width: 1350px) {
   .layout {
-    grid-template-columns: minmax(400px, 1.2fr) minmax(340px, 1fr);
-    grid-template-areas: 'editor cpu' 'chart chart' 'io periph' 'mem mem';
+    grid-template-columns: minmax(400px, 1.15fr) minmax(360px, 1fr);
+    grid-template-areas: 'editor cpu' 'editor periph';
   }
 }
 @media (max-width: 860px) {
-  .layout { grid-template-columns: 1fr; grid-template-areas: 'editor' 'cpu' 'chart' 'io' 'periph' 'mem'; padding: 10px; }
+  .layout { grid-template-columns: 1fr; grid-template-areas: 'editor' 'cpu' 'periph'; padding: 10px; }
+  .area-editor { position: static; }
   .status { margin-left: 0; }
   .toolbar { position: static; }
 }
@@ -120,7 +116,7 @@ input.fcpu { width: 54px; }
 /* ---------- Editor ---------- */
 .editor-panel { display: flex; flex-direction: column; }
 .editor-host {
-  height: min(62vh, 640px); min-height: 320px;
+  height: calc(100vh - var(--toolbar-h, 57px) - 90px); min-height: 320px;
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2); overflow: hidden;
 }
 .cm-bp-gutter .cm-gutterElement { width: 14px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
@@ -209,7 +205,8 @@ input.fcpu { width: 54px; }
 .lg.in-z { border-style: dashed; }
 
 /* ---------- Timers ---------- */
-.timers-tbl td { padding: 4px 6px; }
+.timers-tbl th, .timers-tbl td { padding: 4px 3px; white-space: nowrap; }
+.timers-tbl { font-size: 11.5px; }
 .timers-tbl tr.stopped td { color: var(--dim); }
 .timers-tbl td.oc-on { color: var(--accent); }
 .count-cell { min-width: 70px; }
@@ -252,7 +249,7 @@ input.fcpu { width: 54px; }
 .listing { max-height: 360px; }
 .listing tr.clickable { cursor: pointer; }
 .listing tr.clickable:hover td { background: var(--hover); }
-.listing tr.label-row td { color: var(--accent); padding-top: 6px; }
+.listing tr.label-row td { color: #f472b6; padding-top: 6px; }
 .listing tr.pc-row td { background: var(--changed); color: var(--strong); }
 .hexdump { font-size: 11.5px; }
 .hex-row { display: flex; gap: 2px; align-items: center; }
@@ -276,7 +273,7 @@ input.fcpu { width: 54px; }
 
 /* ---------- Chart ---------- */
 .chart-panel .panel-head select { margin-left: auto; }
-.pin-picker { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.pin-picker { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 8px; }
 .pin-group { display: flex; gap: 2px; align-items: center; }
 .pin-group > span { margin-right: 3px; color: var(--muted); }
 .chip {
@@ -321,3 +318,4 @@ dialog.arduino-window {
 .trace-box { margin-top: 6px; }
 .trace-box summary { cursor: pointer; display: flex; align-items: center; gap: 8px; }
 .upload-log.trace { max-height: 180px; font-size: 10.5px; }
+.timers-panel { overflow-x: auto; }

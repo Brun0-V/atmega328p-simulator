@@ -58,7 +58,8 @@ export class TimingChart implements Panel {
     this.el = h(
       'section',
       { class: 'panel chart-panel' },
-      h('div', { class: 'panel-head' }, h('h2', {}, 'Timing chart'), picker, this.windowSel),
+      h('div', { class: 'panel-head' }, h('h2', {}, 'Timing chart'), this.windowSel),
+      picker,
       h('div', { class: 'chart-wrap' }, this.canvas),
     );
     this.updateChips();
