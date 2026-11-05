@@ -79,17 +79,17 @@ const avrAsm = StreamLanguage.define<LexState>({
 });
 
 const highlight = HighlightStyle.define([
-  { tag: t.keyword, color: '#7dd3fc', fontWeight: '600' },
-  { tag: t.meta, color: '#c084fc' },
-  { tag: t.atom, color: '#fbbf24' },
-  { tag: t.typeName, color: '#5eead4' },
-  { tag: t.labelName, color: '#f472b6', fontWeight: '600' },
-  { tag: t.number, color: '#fdba74' },
-  { tag: t.string, color: '#86efac' },
-  { tag: t.lineComment, color: '#6b7280', fontStyle: 'italic' },
-  { tag: t.operator, color: '#9ca3af' },
-  { tag: t.variableName, color: '#e5e7eb' },
-  { tag: t.function(t.variableName), color: '#a5b4fc' },
+  { tag: t.keyword, color: '#e6e6e6' },
+  { tag: t.meta, color: '#8a8a8a' },
+  { tag: t.atom, color: '#a8a8a8' },
+  { tag: t.typeName, color: '#a8a8a8' },
+  { tag: t.labelName, color: '#d9a441' },
+  { tag: t.number, color: '#b5c99a' },
+  { tag: t.string, color: '#b5c99a' },
+  { tag: t.lineComment, color: '#5f5f5f' },
+  { tag: t.operator, color: '#8a8a8a' },
+  { tag: t.variableName, color: '#a8a8a8' },
+  { tag: t.function(t.variableName), color: '#a8a8a8' },
 ]);
 
 // ---------------------------------------------------------------------------
@@ -216,14 +216,14 @@ class AddrMarker extends GutterMarker {
 
 const theme = EditorView.theme(
   {
-    '&': { height: '100%', fontSize: '13px', backgroundColor: 'transparent', color: '#e5e7eb' },
+    '&': { height: '100%', fontSize: '13px', backgroundColor: 'transparent', color: '#d4d4d4' },
     '.cm-scroller': { fontFamily: 'var(--mono)', lineHeight: '1.55' },
-    '.cm-content': { caretColor: '#a5b4fc' },
-    '.cm-cursor': { borderLeftColor: '#a5b4fc' },
-    '.cm-gutters': { backgroundColor: 'transparent', color: '#4b5563', border: 'none' },
-    '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.03)' },
-    '.cm-activeLineGutter': { backgroundColor: 'transparent', color: '#9ca3af' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(99,102,241,0.35) !important' },
+    '.cm-content': { caretColor: '#d4d4d4' },
+    '.cm-cursor': { borderLeftColor: '#d4d4d4' },
+    '.cm-gutters': { backgroundColor: 'transparent', color: '#4a4a4a', border: 'none' },
+    '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.025)' },
+    '.cm-activeLineGutter': { backgroundColor: 'transparent', color: '#8a8a8a' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection': { backgroundColor: 'rgba(255,255,255,0.12) !important' },
     '.cm-lineNumbers .cm-gutterElement': { cursor: 'pointer', padding: '0 6px 0 4px' },
   },
   { dark: true },

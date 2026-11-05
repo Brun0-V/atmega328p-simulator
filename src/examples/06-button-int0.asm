@@ -1,6 +1,6 @@
 ; Toggle the LED (PB5) with a button on PD2 using the INT0 interrupt.
 ; PD2 has its pull-up enabled, so it reads high while released.
-; Click PD2 in the "I/O Ports" panel to press the button (drive it low),
+; Click PD2 in the "I/O ports" panel to press the button (drive it low),
 ; click again to release it.
 
 .include "m328Pdef.inc"

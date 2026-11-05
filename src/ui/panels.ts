@@ -258,7 +258,7 @@ export class PortsPanel implements Panel {
       h('span', { class: 'lg in-z' }, 'Floating'),
       h('span', { class: 'muted small' }, 'Click an input pin to drive it, right-click to release.'),
     );
-    this.el = h('section', { class: 'panel' }, h('h2', {}, 'I/O Ports'), body, legend);
+    this.el = h('section', { class: 'panel' }, h('h2', {}, 'I/O ports'), body, legend);
   }
 
   private clickPin(port: Port, bit: number): void {
@@ -497,7 +497,7 @@ export class UsartPanel implements Panel {
     this.el = h(
       'section',
       { class: 'panel usart-panel' },
-      h('h2', {}, 'USART0 Serial Console'),
+      h('h2', {}, 'USART0 serial console'),
       this.status,
       this.output,
       h('div', { class: 'console-row' }, this.input, this.ending, clear),

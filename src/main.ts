@@ -1,5 +1,4 @@
 import './style.css';
-import iconUrl from '../assets/icon.svg';
 import { assemble, type AsmResult } from './core/assembler';
 import { ATmega328P, type StopReason } from './core/mcu';
 import { EXAMPLES } from './examples';
@@ -99,18 +98,18 @@ const btnOver = h('button', { class: 'btn', title: 'Step over calls: run until t
 const btnOut = h('button', { class: 'btn', title: 'Run until the current subroutine returns (Ctrl+F10)', onclick: () => doStepOut() }, 'Step out');
 const btnRun = h('button', { class: 'btn run', title: 'Run / pause (F5)', onclick: () => (running ? stop('paused') : start()) }, 'Run');
 const btnReset = h('button', { class: 'btn', title: 'Reset the MCU (keeps the program)', onclick: () => doReset() }, 'Reset');
-const statusPill = h('span', { class: 'pill' }, 'READY');
+const statusPill = h('span', { class: 'pill' }, 'Ready');
 const speedText = h('span', { class: 'muted small speed-text' });
 const helpBtn = h('button', { class: 'btn ghost', title: 'Help', onclick: () => helpDialog.showModal() }, '?');
 const btnArduino = h('button', {
-  class: 'btn arduino',
+  class: 'btn',
   title: 'Upload the program to a real Arduino Uno over USB (Web Serial)',
   onclick: () => arduino.show(),
 }, 'Upload to Arduino');
 exampleSel.classList.add('example-sel');
 
 const toolbar = h('header', { class: 'toolbar' },
-  h('div', { class: 'brand' }, h('img', { src: iconUrl, alt: '' }), h('div', {}, h('b', {}, 'ATmega328P'), h('span', {}, ' Simulator'))),
+  h('div', { class: 'brand' }, 'ATmega328P', h('span', {}, ' simulator')),
   exampleSel,
   h('div', { class: 'btn-group' }, btnAssemble, btnArduino),
   h('div', { class: 'btn-group' }, btnStep, btnOver, btnOut, btnRun, btnReset),
@@ -424,21 +423,21 @@ function render(): void {
   editor.setPc(showLine && line > 0 ? line : null, stopped ? 'break' : 'pc', !running || hz <= 100);
 
   // Status
-  let pill = 'READY';
+  let pill = 'Ready';
   let cls = '';
   if (cpu.halted) {
-    pill = 'HALTED';
+    pill = 'Halted';
     cls = 'err';
   } else if (running) {
-    pill = cpu.sleeping ? 'SLEEPING' : runUntil ? runLabel.toUpperCase() : 'RUNNING';
+    pill = cpu.sleeping ? 'Sleeping' : runUntil ? runLabel : 'Running';
     cls = 'run';
   } else if (statusMsg.text.startsWith('Breakpoint')) {
-    pill = 'BREAKPOINT';
+    pill = 'Breakpoint';
     cls = 'warn';
   } else if (cpu.sleeping) {
-    pill = 'SLEEPING';
+    pill = 'Sleeping';
     cls = 'warn';
-  } else if (statusMsg.text === 'Paused') pill = 'PAUSED';
+  } else if (statusMsg.text === 'Paused') pill = 'Paused';
   setText(statusPill, pill);
   statusPill.className = `pill ${cls}`;
 
@@ -453,6 +452,7 @@ function render(): void {
     const pct = isFinite(target) && !runUntil ? ` (${Math.round((speedSample.hz / target) * 100)}%)` : '';
     st = `${formatHz(speedSample.hz)}${pct}`;
   }
+  if (st === pill) st = '';
   setText(speedText, st);
   setClass(speedText, 'err', statusMsg.kind === 'err' && !running);
   setClass(speedText, 'warn', statusMsg.kind === 'warn' && !running);

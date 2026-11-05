@@ -7,7 +7,7 @@ const ALL_PINS = [
   ...Array.from({ length: 7 }, (_, i) => `PC${i}`),
   ...Array.from({ length: 8 }, (_, i) => `PD${i}`),
 ];
-const COLORS = ['#34d399', '#60a5fa', '#f472b6', '#fbbf24', '#a78bfa', '#f87171', '#2dd4bf', '#fb923c'];
+const TRACE = '#d9a441';
 const WINDOWS: [string, number][] = [
   ['100 cycles', 100], ['1k cycles', 1e3], ['10k cycles', 1e4], ['100k cycles', 1e5],
   ['1M cycles', 1e6], ['10M cycles', 1e7], ['100M cycles', 1e8], ['Whole run', 0],
@@ -58,7 +58,7 @@ export class TimingChart implements Panel {
     this.el = h(
       'section',
       { class: 'panel chart-panel' },
-      h('div', { class: 'panel-head' }, h('h2', {}, 'Timing Chart'), picker, this.windowSel),
+      h('div', { class: 'panel-head' }, h('h2', {}, 'Timing chart'), picker, this.windowSel),
       h('div', { class: 'chart-wrap' }, this.canvas),
     );
     this.updateChips();
@@ -128,8 +128,8 @@ export class TimingChart implements Panel {
     // Grid and axis
     g.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
     const step = niceStep(span / Math.max(2, plotW / 90));
-    g.strokeStyle = 'rgba(255,255,255,0.06)';
-    g.fillStyle = '#6b7280';
+    g.strokeStyle = 'rgba(255,255,255,0.05)';
+    g.fillStyle = '#5f5f5f';
     g.lineWidth = 1;
     for (let t = Math.ceil(start / step) * step; t <= end; t += step) {
       const x = Math.round(X(t)) + 0.5;
@@ -141,7 +141,7 @@ export class TimingChart implements Panel {
     }
 
     if (!this.pins.length) {
-      g.fillStyle = '#6b7280';
+      g.fillStyle = '#5f5f5f';
       g.fillText('Pick pins above to show their waveforms.', LABEL_W, 20);
     }
 
@@ -150,8 +150,8 @@ export class TimingChart implements Panel {
       const top = row * ROW_H + 6;
       const yHi = top + 3, yLo = top + ROW_H - 9, yMid = (yHi + yLo) / 2;
       const Y = (s: number) => (s === 1 ? yHi : s === 0 ? yLo : yMid);
-      const color = COLORS[row % COLORS.length];
-      g.fillStyle = '#9ca3af';
+      const color = TRACE;
+      g.fillStyle = '#8a8a8a';
       g.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
       g.fillText(pin, 6, yMid + 4);
       if (!trace || !trace.times.length) return;
@@ -190,7 +190,7 @@ export class TimingChart implements Panel {
       g.lineTo(X(end), Y(s));
       g.stroke();
       // Light fill under high levels helps reading PWM duty.
-      g.globalAlpha = 0.08;
+      g.globalAlpha = 0.05;
       g.fillStyle = color;
       g.fillRect(LABEL_W, yHi, plotW, yLo - yHi);
       g.globalAlpha = 1;
@@ -198,7 +198,7 @@ export class TimingChart implements Panel {
 
     if (this.hoverX !== null && this.hoverX > LABEL_W) {
       const t = start + ((this.hoverX - LABEL_W) / plotW) * span;
-      g.strokeStyle = 'rgba(165,180,252,0.6)';
+      g.strokeStyle = 'rgba(255,255,255,0.35)';
       g.beginPath();
       g.moveTo(this.hoverX + 0.5, 0);
       g.lineTo(this.hoverX + 0.5, cssH - AXIS_H);
@@ -207,9 +207,9 @@ export class TimingChart implements Panel {
       g.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
       const w = g.measureText(label).width + 8;
       const x = Math.min(this.hoverX + 6, cssW - w - 2);
-      g.fillStyle = 'rgba(17,24,39,0.92)';
+      g.fillStyle = 'rgba(20,20,20,0.95)';
       g.fillRect(x, 2, w, 16);
-      g.fillStyle = '#e5e7eb';
+      g.fillStyle = '#d4d4d4';
       g.fillText(label, x + 4, 14);
     }
   }
